@@ -3,8 +3,9 @@ import pandas as pd
 import zipfile
 import io
 import requests
+import json
 
-AIPROXY_TOKEN = "eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6IjI0ZjEwMDA1MTFAZHMuc3R1ZHkuaWl0bS5hYy5pbiJ9.mClsSTr8HODa_tvFwsMPOfJtKfDXKeblukACx05c16s"  # Replace with your actual token
+AIPROXY_TOKEN = "eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6IjI0ZjEwMDA1MTFAZHMuc3R1ZHkuaWl0bS5hYy5pbiJ9.mClsSTr8HODa_tvFwsMPOfJtKfDXKeblukACx05c16s"
 AI_PROXY_URL = "https://aiproxy.sanand.workers.dev/openai/v1/chat/completions"
 
 app = FastAPI()
@@ -15,25 +16,21 @@ async def answer_question(
     file: UploadFile = File(None)
 ):
     extracted_data = ""
-
+    
     if file and file.filename.endswith(".zip"):
         try:
             with zipfile.ZipFile(io.BytesIO(await file.read()), "r") as zip_ref:
                 csv_files = [f for f in zip_ref.namelist() if f.endswith(".csv")]
                 if not csv_files:
                     raise HTTPException(status_code=400, detail="No CSV file found in ZIP.")
-
-                csv_data_list = []
-                for csv_file in csv_files:
-                    with zip_ref.open(csv_file) as f:
-                        df = pd.read_csv(f)
-                        csv_data_list.append(df.to_csv(index=False))
-
-                extracted_data = "\n\n".join(csv_data_list)
-
+                
+                extracted_data = "\n\n".join(
+                    pd.read_csv(zip_ref.open(csv_file)).to_csv(index=False)
+                    for csv_file in csv_files
+                )
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error processing ZIP file: {str(e)}")
-
+    
     try:
         headers = {
             "Content-Type": "application/json",
@@ -61,14 +58,17 @@ async def answer_question(
         }
         response = requests.post(AI_PROXY_URL, headers=headers, json=data)
         response_json = response.json()
-
+        
         if "choices" not in response_json or not response_json["choices"]:
             raise HTTPException(status_code=500, detail="Invalid response from AI Proxy API.")
-
+        
         ai_response = response_json["choices"][0]["message"]["content"].strip()
-        ai_response = ai_response.replace("```json", "").replace("```", "").strip()
-
-        return {"answer": ai_response}
-
+        
+        try:
+            parsed_json = json.loads(ai_response)
+            return {"answer": parsed_json}
+        except json.JSONDecodeError:
+            return {"answer": ai_response}
+    
     except requests.RequestException as e:
         raise HTTPException(status_code=500, detail=f"AI Proxy API error: {str(e)}")

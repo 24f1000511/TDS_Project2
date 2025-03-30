@@ -3,7 +3,6 @@ import pandas as pd
 import zipfile
 import io
 import requests
-import json
 
 AIPROXY_TOKEN = "eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6IjI0ZjEwMDA1MTFAZHMuc3R1ZHkuaWl0bS5hYy5pbiJ9.mClsSTr8HODa_tvFwsMPOfJtKfDXKeblukACx05c16s"
 AI_PROXY_URL = "https://aiproxy.sanand.workers.dev/openai/v1/chat/completions"
@@ -69,11 +68,7 @@ async def answer_question(
         ai_response = response_json["choices"][0]["message"]["content"].strip()
         ai_response = ai_response.replace("```json", "").replace("```", "").strip()
 
-        try:
-            ai_response = json.loads(ai_response)
-            return {"answer": json.dumps(ai_response, separators=(",", ":"))}
-        except json.JSONDecodeError:
-            return {"answer": ai_response}
+        return {"answer": ai_response}
 
     except requests.RequestException as e:
         raise HTTPException(status_code=500, detail=f"AI Proxy API error: {str(e)}")

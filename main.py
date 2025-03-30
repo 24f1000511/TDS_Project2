@@ -16,21 +16,25 @@ async def answer_question(
     file: UploadFile = File(None)
 ):
     extracted_data = ""
-    
+
     if file and file.filename.endswith(".zip"):
         try:
             with zipfile.ZipFile(io.BytesIO(await file.read()), "r") as zip_ref:
                 csv_files = [f for f in zip_ref.namelist() if f.endswith(".csv")]
                 if not csv_files:
                     raise HTTPException(status_code=400, detail="No CSV file found in ZIP.")
-                
-                extracted_data = "\n\n".join(
-                    pd.read_csv(zip_ref.open(csv_file)).to_csv(index=False)
-                    for csv_file in csv_files
-                )
+
+                csv_data_list = []
+                for csv_file in csv_files:
+                    with zip_ref.open(csv_file) as f:
+                        df = pd.read_csv(f)
+                        csv_data_list.append(df.to_csv(index=False))
+
+                extracted_data = "\n\n".join(csv_data_list)
+
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error processing ZIP file: {str(e)}")
-    
+
     try:
         headers = {
             "Content-Type": "application/json",
@@ -58,17 +62,18 @@ async def answer_question(
         }
         response = requests.post(AI_PROXY_URL, headers=headers, json=data)
         response_json = response.json()
-        
+
         if "choices" not in response_json or not response_json["choices"]:
             raise HTTPException(status_code=500, detail="Invalid response from AI Proxy API.")
-        
+
         ai_response = response_json["choices"][0]["message"]["content"].strip()
-        
+        ai_response = ai_response.replace("```json", "").replace("```", "").strip()
+
         try:
-            parsed_json = json.loads(ai_response)
-            return {"answer": parsed_json}
+            ai_response = json.loads(ai_response)
+            return {"answer": json.dumps(ai_response, separators=(",", ":"))}
         except json.JSONDecodeError:
             return {"answer": ai_response}
-    
+
     except requests.RequestException as e:
         raise HTTPException(status_code=500, detail=f"AI Proxy API error: {str(e)}")
